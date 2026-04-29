@@ -1,4 +1,37 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+import {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ChatInputCommandInteraction,
+  Client,
+  GuildMember,
+} from 'discord.js';
+import { RowDataPacket } from 'mysql2/promise';
+
+interface PlayerRow extends RowDataPacket {
+  id: number;
+  display_name: string;
+  discord_id: string | null;
+  home: string | null;
+  server: string | null;
+  region: string | null;
+  currency: number;
+}
+
+interface ServerRow extends RowDataPacket {
+  linked_role_id: string;
+}
+
+interface BotClient extends Client {
+  functions: {
+    is_empty: (s: string) => boolean;
+    check_link: (client: BotClient, discord_id: string) => Promise<boolean>;
+    [key: string]: any;
+  };
+  database_connection: {
+    query: (sql: string, values?: any[]) => Promise<[RowDataPacket[], any]>;
+    execute: (sql: string, values?: any[]) => Promise<[RowDataPacket[], any]>;
+  };
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -11,57 +44,62 @@ module.exports = {
         .setRequired(true)
     ),
 
-  async execute(interaction, client) {
+  async execute(
+    interaction: ChatInputCommandInteraction,
+    client: BotClient
+  ): Promise<void> {
     const gamertag = interaction.options.getString('gamertag');
 
-    if (client.functions.is_empty(gamertag)) {
-      return await interaction.reply({
+    if (!gamertag || client.functions.is_empty(gamertag)) {
+      await interaction.reply({
         content: 'Please provide a valid gamertag!',
         ephemeral: true,
       });
+      return;
     }
 
-    // Check if the user already has a linked account
-    const existingLink = await client.functions.check_link(
+    const existingLink: boolean = await client.functions.check_link(
       client,
       interaction.user.id
     );
 
     if (existingLink) {
-      return await interaction.reply({
-        content: 'Your Discord account is already linked to an in-game player!',
+      await interaction.reply({
+        content:
+          'Your Discord account is already linked to an in-game player!',
         ephemeral: true,
       });
+      return;
     }
 
     try {
-      // Check if the gamertag exists in the database and is not already linked
       const [rows] = await client.database_connection.query(
         `SELECT * FROM players WHERE display_name = ? AND (discord_id IS NULL OR discord_id = '')`,
         [gamertag]
-      );
+      ) as [PlayerRow[], any];
 
       if (rows.length === 0) {
-        return await interaction.reply({
+        await interaction.reply({
           content: `The gamertag **${gamertag}** is either already linked to another Discord account or does not exist. Make sure you have joined the server at least once (kill someone or relog)!`,
           ephemeral: true,
         });
+        return;
       }
 
-      // Update the player's discord ID in the database
       await client.database_connection.query(
         'UPDATE players SET discord_id = ? WHERE display_name = ?',
         [interaction.user.id, gamertag]
       );
 
-      // Fetch linked_role_id from the database
       const [serverRows] = await client.database_connection.query(
         'SELECT linked_role_id FROM servers WHERE guild_id = ?',
-        [interaction.guild.id]
-      );
+        [interaction.guild?.id]
+      ) as [ServerRow[], any];
 
-      // Set nickname and add linked role if available
-      const member = interaction.guild.members.cache.get(interaction.user.id);
+      const member = interaction.guild?.members.cache.get(
+        interaction.user.id
+      ) as GuildMember | undefined;
+
       if (member) {
         try {
           await member.setNickname(gamertag);
@@ -79,13 +117,13 @@ module.exports = {
       }
 
       const embed = new EmbedBuilder()
-        .setColor(process.env.EMBED_COLOR || '#00AAFF')
+        .setColor((process.env.EMBED_COLOR as `#${string}`) || '#00AAFF')
         .setTitle('Account Linked')
         .setThumbnail(process.env.EMBED_LOGO || null)
         .setTimestamp()
         .setFooter({
           text: process.env.EMBED_FOOTER_TEXT || 'Rust Console',
-          iconURL: process.env.EMBED_LOGO || null,
+          iconURL: process.env.EMBED_LOGO || undefined,
         })
         .setDescription(
           `Successfully linked your Discord account to **${gamertag}**!`
@@ -98,7 +136,8 @@ module.exports = {
     } catch (error) {
       console.error('[LINK COMMAND]', error);
       await interaction.reply({
-        content: `An error occurred while linking your account. Please try again later.`,
+        content:
+          'An error occurred while linking your account. Please try again later.',
         ephemeral: true,
       });
     }
