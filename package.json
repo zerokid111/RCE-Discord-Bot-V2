@@ -4,7 +4,8 @@
   "description": "A Discord Bot For Rust Console Community Servers",
   "main": "bot.js",
   "scripts": {
-    "start": "cls && node bot.js",
+    "build": "tsc",
+    "start": "npm run build && node bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -34,5 +35,9 @@
     "mysql2": "^3.9.2",
     "node-cron": "^4.0.0",
     "rce.js": "github:b1nzeex/rce.js"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3"
   }
 }
