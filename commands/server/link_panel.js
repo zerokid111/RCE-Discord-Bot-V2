@@ -10,7 +10,7 @@ const {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('link')
+    .setName('linkpanel')
     .setDescription('Send the embed for linking')
     .setDefaultMemberPermissions(
       PermissionFlagsBits.KickMembers |
